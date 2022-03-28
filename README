@@ -13,8 +13,20 @@ REMARKS:
 1)
 
 ANSWERS:
-1) 
+1) User-level threads are small and much faster than kernel level threads. If we want to implement a system that doesn't do alot of I/O operations, 
+   but has many different mechanisms running at the same time with the same resources, we would want to use user-level-threading. 
+   
+2) 
 
+3) 
 
+4)
+
+5) The sigsetjmp() function saves the environment of the calling thread in its sigjmp_buf env argument. If the value of the 
+savemask argument is not 0, sigsetjmp will also save the current signal mask of the calling thread as part of the calling 
+environment. sigsetjmp() returns 0 when successful, or thread number if the return is from a call to siglongjmp(). 
+The siglongjmp() function restores the environment saved by the most recent invocation of sigsetjmp() in the same thread, with the corresponding 
+sigjmp_buf argument. After siglongjmp() is completed, program execution continues as if the corresponding invocation of sigsetjmp() had just
+returned the value specified by the argument val.
 
 
