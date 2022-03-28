@@ -1,0 +1,20 @@
+oren_gerc,nitaiseri
+Oren Gercenshtein (316120203), Nitai Seri (311525505)
+EX: 2
+
+FILES:
+README - this file.
+Makefile - contains the recipe for building the program.
+uthreads.cpp - implements the uthreads library.
+uthreads_lib.cpp - implements the data structures used in the uthreads library.
+uthreads_lib.hpp - declares the data structures used in the uthreads library.
+
+REMARKS:
+1)
+
+ANSWERS:
+1) 
+
+
+
+
