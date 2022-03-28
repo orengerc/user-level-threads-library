@@ -2,10 +2,7 @@
 #pragma ide diagnostic ignored "cert-err58-cpp"
 #include "uthreads.h"
 #include <iostream>
-#include <queue>
-#include <unordered_set>
-#include <unordered_map>
-#include <stdio.h>
+#include <cstdio>
 #include <setjmp.h>
 #include <signal.h>
 #include <unistd.h>
@@ -13,12 +10,6 @@
 #include <stdbool.h>
 
 
-std::unordered_map<int, sigjmp_buf> threads{};
-
-std::unordered_set<int> blocked_tids{};
-std::queue<int> ready_tids{};
-int running_tid{};
-int quantum{};
 
 
 /**
@@ -32,7 +23,7 @@ int quantum{};
  * @return On success, return 0. On failure, return -1.
 */
 int uthread_init(int quantum_usecs){
-
+    //initialize new UthreadLib with quantum_secs
 }
 
 int get_lowest_free_tid(){
@@ -51,6 +42,7 @@ int get_lowest_free_tid(){
  * @return On success, return the ID of the created thread. On failure, return -1.
 */
 int uthread_spawn(thread_entry_point entry_point){
+
     //init thread with stack size 4096
 
     new_thread->tid_ = get_lowest_free_tid();
