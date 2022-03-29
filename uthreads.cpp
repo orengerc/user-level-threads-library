@@ -9,7 +9,7 @@
 #include <setjmp.h>
 #include <signal.h>
 #include <sys/time.h>
-#include <queue>
+#include <deque>
 #include <unordered_set>
 #include <unordered_map>
 #include <set>
@@ -24,7 +24,8 @@ typedef unsigned long address_t;
 
 /* A translation is required when using an address of a variable.
    Use this as a black box in your code. */
-address_t translate_address(address_t addr) {
+address_t translate_address(address_t addr)
+{
     address_t ret;
     asm volatile("xor    %%fs:0x30,%0\n"
                  "rol    $0x11,%0\n"
@@ -59,18 +60,20 @@ address_t translate_address(address_t addr)
 //-----------------------------------------------------classes----------------------------------------------------------
 
 #define DEFAULT_QUANTUM 0  //good default value??
-#define MAX_THREADS 1500   //what's the actual max??
 #define SUCCESS EXIT_SUCCESS
 #define FAILURE EXIT_FAILURE
+#define BLOCK_THREAD_ERROR (-1)
 
 /** Class that implements a single user-level-thread. */
-class UThread {
+class UThread
+{
 private:
     int tid_;
     sigjmp_buf env_;  //what library to include for this guy?
 public:
-    UThread(int tid, char *stack, thread_entry_point entry_point) : tid_(tid) {
-        address_t sp = (address_t) stack + STACK_SIZE - sizeof(address_t);
+    UThread(int tid, char *stack, thread_entry_point entry_point) : tid_(tid), env_{0}
+    {
+        address_t sp = (address_t) stack + STACK_SIZE - sizeof(address_t);  //change for heap
         address_t pc = (address_t) entry_point;
         sigsetjmp(env_, 1);
         (env_->__jmpbuf)[JB_SP] = translate_address(sp);
@@ -78,34 +81,54 @@ public:
         sigemptyset(&env_->__saved_mask);  //needed?
     }
 
-    int get_tid() const { return tid_; };
+    int get_tid() const
+    { return tid_; };
 
-    void set_tid(int new_tid) { tid_ = new_tid; }
+    void set_tid(int new_tid)
+    { tid_ = new_tid; }
 };
 
 /** Class that manages UThreads using proper data-structures. */
-class UthreadsLib {
+class UthreadsLib
+{
 private:
     std::unordered_map<int, UThread> all_threads_ = {};  //should allocate threads on the heap or stack???
     std::unordered_set<int> blocked_tids_ = {};            //unordered because we want fast access
-    std::queue<int> ready_tids_ = {};
+    std::deque<int> ready_tids_ = {};
     std::set<int> free_ids_ = {};                          //set saves the items in increasing order
     int running_tid_ = {};
     int quantum_ = DEFAULT_QUANTUM;
 public:
-    UthreadsLib() {
+    UthreadsLib()
+    {
         //init free_ids set
-        for (int i = 1; i <= MAX_THREADS; ++i) free_ids_.insert(i);
+        for (int i = 1; i <= MAX_THREAD_NUM; ++i) free_ids_.insert(i);
+
+        //init main thread - tid=0, directly into running
+
     }
 
     //getters and setters
-    void set_quantum(int quantum) {
+    void set_quantum(int quantum)
+    {
         quantum_ = quantum;
     }
 
+    int get_quantum() const
+    {
+        return quantum_;
+    }
+
+    int get_running_tid() const
+    {
+        return running_tid_;
+    }
+
     //add new thread (called from spawn)
-    int create_new_thread(void *stack_p, thread_entry_point entry_point) {
-        if (free_ids_.empty()) {
+    int create_new_thread(char *stack_p, thread_entry_point entry_point)
+    {
+        if (free_ids_.empty())
+        {
             return FAILURE;
         }
 
@@ -113,71 +136,162 @@ public:
         free_ids_.erase(free_ids_.begin());  // erase the tid
 
         //add new thread to all_threads_ and ready queue
-        all_threads_.emplace(new_uthread.get_tid(),
-                             new_uthread); /** will the thread object live outside of this scope?? */
+        all_threads_.emplace(new_uthread.get_tid(), new_uthread);
         ready_tids_.push(new_uthread.get_tid());
 
         return SUCCESS;
     }
 
-    //block thread
+    int block_thread(int tid)
+    {
+        // check if tid exists (as key in all_threads)
+
+        // check if tid is running - move running to blocked, move ready to running
+
+        // if it isn't running, move it to block
+    }
 
     //more functions we need
 };
 
 //----------------------------------------------------functions---------------------------------------------------------
 
-UthreadsLib uthreads;
+UthreadsLib uthreads;  //maybe init from uthread_init is possible?
 
-int uthread_init(int quantum_usecs) {
+int switch_threads()
+{
+    //high-level switch, return success if succeeded
+
+    //low level switch- sigset for current thread, siglongjump to new
+
+    return SUCCESS;
+}
+
+int init_sig_action()
+{
+    struct sigaction sa{};
+    sa.sa_handler = reinterpret_cast<_sig_func_ptr>(&switch_threads);  //good cast??
+    if (sigaction(SIGVTALRM, &sa, nullptr) < 0)
+    {
+        /** deal with the error */
+        return FAILURE;
+    }
+
+    //add more actions
+
+    return SUCCESS;
+}
+
+int start_timer()
+{
+    struct itimerval timer{};
+
+    // Configure the timer to expire every quantum micro-seconds
+    timer.it_value.tv_sec = 0;
+    timer.it_value.tv_usec = uthreads.get_quantum();
+    timer.it_interval.tv_sec = 0;
+    timer.it_interval.tv_usec = uthreads.get_quantum();
+
+    // Start a virtual timer
+    if (setitimer(ITIMER_VIRTUAL, &timer, nullptr))
+    {
+        return FAILURE;
+    }
+
+    return SUCCESS;
+}
+
+int uthread_init(int quantum_usecs)
+{
+    if (quantum_usecs <= 0)
+    {
+        /** deal with quantum_usecs error */
+        return FAILURE;
+    }
+
     uthreads.set_quantum(quantum_usecs);
+
+    /** initialize sig-actions */
+    if (SUCCESS != init_sig_action())
+    {
+        /** deal with setitimer error */
+        return FAILURE;
+    }
+
     /** start timer */
-
-    return SUCCESS;
-}
-
-int uthread_spawn(thread_entry_point entry_point) {
-    //allocate 4096 bytes of memory for stack of the new thread
-    void *stack_p = malloc(STACK_SIZE);
-    if (!stack_p) {
-        /** deal with the error */
-        return FAILURE;
-    }
-
-    int success = uthreads.create_new_thread((char*)stack_p, entry_point);
-    if (SUCCESS != success) {
-        /** deal with the error */
+    if (SUCCESS != start_timer())
+    {
+        /** deal with setitimer error */
         return FAILURE;
     }
 
     return SUCCESS;
 }
 
-int uthread_terminate(int tid) {
+int uthread_spawn(thread_entry_point entry_point)
+{
+
+    void *stack_p = malloc(STACK_SIZE);  //allocate 4096 bytes of memory for stack of the new thread
+    if (!stack_p)
+    {
+        /** deal with the error */
+        return FAILURE;
+    }
+
+    int success = uthreads.create_new_thread((char *) stack_p, (thread_entry_point) entry_point);
+    if (SUCCESS != success)
+    {
+        /** deal with the error */
+        return FAILURE;
+    }
+
     return SUCCESS;
 }
 
-int uthread_block(int tid) {
+int uthread_terminate(int tid)
+{
     return SUCCESS;
 }
 
-int uthread_resume(int tid) {
+int uthread_block(int tid)
+{
+    // high level block
+    int new_running_tid = uthreads.block_thread(tid);
+    if (BLOCK_THREAD_ERROR == new_running_tid)
+    {
+
+    }
+
+    if (new_running_tid != uthreads.get_running_tid())
+    {
+        //switch to new thread
+    }
+
     return SUCCESS;
 }
 
-int uthread_sleep(int num_quantums) {
+int uthread_resume(int tid)
+{
     return SUCCESS;
 }
 
-int uthread_get_tid() {
+int uthread_sleep(int num_quantums)
+{
     return SUCCESS;
 }
 
-int uthread_get_total_quantums() {
+int uthread_get_tid()
+{
     return SUCCESS;
 }
 
-int uthread_get_quantums(int tid) {
+int uthread_get_total_quantums()
+{
+    return SUCCESS;
+}
+
+int uthread_get_quantums(int tid)
+{
     return SUCCESS;
 }
 
