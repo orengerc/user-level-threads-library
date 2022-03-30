@@ -351,7 +351,7 @@ int uthread_spawn(thread_entry_point entry_point)
     ready_tids_.emplace_back(new_uthread->tid_);
 
     unblock_vtAlarm();
-    return SUCCESS;
+    return new_uthread->tid_;
 }
 
 int uthread_terminate(int tid)
