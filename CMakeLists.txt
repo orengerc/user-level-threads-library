@@ -1,6 +1,6 @@
-cmake_minimum_required(VERSION 3.20)
+cmake_minimum_required(VERSION 3.17)
 project(os_2022_ex2)
 
 set(CMAKE_CXX_STANDARD 11)
-message("hello")
-add_executable(ex2 main.cpp uthreads.cpp)
+
+add_executable(os_2022_ex2 main.cpp uthreads.cpp demos/demo_jmp.c demos/demo_singInt_handler.c demos/demo_itimer.c)

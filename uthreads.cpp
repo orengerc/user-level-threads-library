@@ -61,12 +61,22 @@ address_t translate_address(address_t addr)
 #endif
 
 #define SUCCESS EXIT_SUCCESS
-#define FAILURE EXIT_FAILURE
+#define FAILURE -1
+#define SYSTEM_CALL_ERR "system error: "
+#define MEMORY_ERR "Memory allocation failed\n"
+#define TIMER_ERR "Setitimer failed\n"
+#define LIBRARY_ERR "thread library error: "
+#define INPUT_ERR "Invalid input\n"
+#define MAX_THREADS_ERR "Passed the max num of threads\n"
+#define TID_NOT_EXIST "This thread doesn't exist\n"
+#define BLOCK_THREAT_ZERO "Can not block thread 0\n"
+
+
 
 /**********************************************************************************************************************
  ******************************************   Data Structures  ********************************************************
  *********************************************************************************************************************/
-
+//TODO: Deal with quantom terminate middle of library funcs
 enum status
 {
     MAIN,
@@ -81,10 +91,12 @@ public:
     int tid_;
     status status_;
     sigjmp_buf env_;
+    int num_of_quantums_running = {0};
     char stack_[STACK_SIZE] = {0};
 
     UThread() : tid_(0), env_{0}, status_(MAIN)
     {
+      //Do we need to save the env for thread 0?
         sigsetjmp(env_, 1);
         sigemptyset(&env_->__saved_mask);
     }
@@ -105,10 +117,12 @@ std::unordered_map<int, UThread *> all_threads_{};  //should allocate threads on
 std::unordered_set<int> blocked_tids_{};            //unordered because we want fast access
 std::deque<int> ready_tids_{};
 std::set<int> free_ids_{};                          //set saves the items in increasing order
+int num_of_total_quantums;
 int running_tid_{};
 int quantum_{};
 struct sigaction sa{};
 struct itimerval timer{};
+sigset_t set;
 
 /**********************************************************************************************************************
  **********************************************   Functions    ********************************************************
@@ -120,7 +134,8 @@ int initialize_main_thread()
     auto new_uthread = new(std::nothrow) UThread;  // create new thread
     if (!new_uthread)
     {
-        return FAILURE;
+      std::cerr << SYSTEM_CALL_ERR << MEMORY_ERR;
+      exit(EXIT_FAILURE);
     }
 
     //add it to the map
@@ -140,6 +155,8 @@ void cleanup()
 
 int start_timer()
 {
+    //TODO deal with quantum longer then seconds
+
     // Configure the timer to expire every quantum micro-seconds
     timer.it_value.tv_sec = 0;
     timer.it_value.tv_usec = quantum_;
@@ -149,8 +166,11 @@ int start_timer()
     // Start a virtual timer
     if (setitimer(ITIMER_VIRTUAL, &timer, nullptr))
     {
-        return FAILURE;
+        std::cerr << SYSTEM_CALL_ERR << TIMER_ERR;
+        exit(EXIT_FAILURE);
     }
+
+    num_of_total_quantums ++;
 
     return SUCCESS;
 }
@@ -161,33 +181,53 @@ int reset_timer()
     start_timer();
 }
 
+void block_vtAlarm()
+{
+  sigemptyset(&set);
+  sigaddset(&set, SIGVTALRM);
+  sigprocmask(SIG_SETMASK, &set, NULL);
+}
+
+void unblock_vtAlarm()
+{
+  sigemptyset(&set);
+  sigaddset(&set, SIGVTALRM);
+  sigprocmask(SIG_UNBLOCK, &set, NULL);
+}
+
 int switch_ready_to_running()
 {
-    //save environment of current running thread, only if save succeeded, proceed to jump
-    if (sigsetjmp(all_threads_[running_tid_]->env_, 1))
-    {
-        /** deal with the error */
-        cleanup();
-        exit(EXIT_FAILURE);
-    }
+    // TODO:deal with empty ready.
 
     //move first in ready to running
     running_tid_ = ready_tids_.front();
+    all_threads_[running_tid_] -> status_ = RUNNING;
+    all_threads_[running_tid_] -> num_of_quantums_running ++;
+    num_of_total_quantums ++;
 
     //erase first in ready
     ready_tids_.pop_front();
 
-    //reset timer
-    reset_timer();
-
     //jump to new running tid
+    unblock_vtAlarm();
     siglongjmp(all_threads_[running_tid_]->env_, 1);  //need to check return value??
 }
 
 int time_switch()
 {
+    //count the quantum
+    num_of_total_quantums += 1;
     //add running thread to ready queue
     ready_tids_.emplace_back(running_tid_);
+    all_threads_[running_tid_] -> status_ = READY;
+
+    //save environment of current running thread, only if save succeeded, proceed to jump
+    if (sigsetjmp(all_threads_[running_tid_]->env_, 1))
+    {
+      /** deal with the error */
+      cleanup();
+      exit(EXIT_FAILURE);
+    }
 
     //switch first in ready to running
     return switch_ready_to_running();
@@ -210,11 +250,10 @@ int initialize_sigaction()
 int uthread_init(int quantum_usecs)
 {
     //init main thread - tid=0, directly into running
-    if (SUCCESS != initialize_main_thread())
-    {
-        cleanup();
-        exit(EXIT_FAILURE);
-    }
+    initialize_main_thread();
+
+    //start count
+    num_of_total_quantums = 1;
 
     //init free_ids set
     for (int i = 1; i <= MAX_THREAD_NUM; ++i) free_ids_.insert(i);
@@ -222,7 +261,7 @@ int uthread_init(int quantum_usecs)
     /** check input */
     if (quantum_usecs <= 0)
     {
-        /** deal with quantum_usecs error */
+        std::cerr << LIBRARY_ERR << INPUT_ERR;
         return FAILURE;
     }
 
@@ -247,9 +286,10 @@ int uthread_init(int quantum_usecs)
 
 int uthread_spawn(thread_entry_point entry_point)
 {
+    block_vtAlarm();
     if (free_ids_.empty())
     {
-        /** deal with the error */
+        std::cerr << LIBRARY_ERR << MAX_THREADS_ERR;
         return FAILURE;
     }
 
@@ -257,6 +297,7 @@ int uthread_spawn(thread_entry_point entry_point)
     if (!new_uthread)
     {
         cleanup();
+        std::cerr << SYSTEM_CALL_ERR << MEMORY_ERR;
         exit(EXIT_FAILURE);
     }
     free_ids_.erase(free_ids_.begin());  // erase the tid
@@ -265,11 +306,14 @@ int uthread_spawn(thread_entry_point entry_point)
     all_threads_.emplace(new_uthread->tid_, new_uthread);
     ready_tids_.emplace_back(new_uthread->tid_);
 
+    unblock_vtAlarm();
     return SUCCESS;
 }
 
 int uthread_terminate(int tid)
 {
+    block_vtAlarm();
+
     //main thread termination is illegal
     if (0 == tid)
     {
@@ -280,27 +324,11 @@ int uthread_terminate(int tid)
     //if thread doesn't exist, return failure
     if (all_threads_.find(tid) == all_threads_.end())
     {
-        /** deal with the error */
+        std::cerr << LIBRARY_ERR << TID_NOT_EXIST;
         return FAILURE;
     }
 
     //otherwise:
-    switch (all_threads_[tid]->status_)
-    {
-        case MAIN:
-            //irrelevant
-            break;
-        case RUNNING:
-            //what to do??
-            (void) (0);
-            break;
-        case READY:
-            ready_tids_.erase(std::find(ready_tids_.begin(), ready_tids_.end(), tid));
-            break;
-        case BLOCKED:
-            blocked_tids_.erase(tid);
-            break;
-    }
 
     //return tid to free_tids
     free_ids_.insert(tid);
@@ -308,39 +336,19 @@ int uthread_terminate(int tid)
     //release memory of the terminated thread
     delete all_threads_[tid];
 
-    //switch tid to nex_tid
-
-    //start timer again
-    reset_timer();
-
-    return SUCCESS;
-}
-
-int uthread_block(int tid)
-{
-    //try to block the main thread
-    if (0 == tid)
-    {
-        /** deal with the error */
-        return FAILURE;
-    }
-
-    //if thread doesn't exist, return failure
-    if (all_threads_.find(tid) == all_threads_.end())
-    {
-        /** deal with the error */
-        return FAILURE;
-    }
-
-    //otherwise:
     switch (all_threads_[tid]->status_)
     {
+        case MAIN:
+            //irrelevant
+            break;
         case RUNNING:
-            blocked_tids_.insert(tid);
+            //start timer again
+            reset_timer();
+            //switch tid to nex_tid
             if (SUCCESS != switch_ready_to_running())
             {
-                /** deal with the error */
-                return FAILURE;
+              /** deal with the error */
+              return FAILURE;
             }
             break;
         case READY:
@@ -349,17 +357,80 @@ int uthread_block(int tid)
         case BLOCKED:
             blocked_tids_.erase(tid);
             break;
+    }
+
+    unblock_vtAlarm();
+    return SUCCESS;
+}
+
+int uthread_block(int tid)
+{
+    block_vtAlarm();
+
+    //try to block the main thread
+    if (0 == tid)
+    {
+        std::cerr << LIBRARY_ERR << BLOCK_THREAT_ZERO;
+        return FAILURE;
+    }
+
+    //if thread doesn't exist, return failure
+    if (all_threads_.find(tid) == all_threads_.end())
+    {
+        std::cerr << LIBRARY_ERR << TID_NOT_EXIST;
+        return FAILURE;
+    }
+
+    //otherwise:
+    switch (all_threads_[tid]->status_)
+    {
+        case RUNNING:
+            blocked_tids_.insert(tid);
+
+            //start timer again
+            reset_timer();
+
+            if (SUCCESS != switch_ready_to_running())
+            {
+                /** deal with the error */
+                return FAILURE;
+            }
+            break;
+        case READY:
+            ready_tids_.erase(std::find(ready_tids_.begin(), ready_tids_.end(), tid));
+            blocked_tids_.insert(tid);
+            break;
+        case BLOCKED:
+            // Do nothing
+            break;
         case MAIN:
             //irrelevant
             break;
     }
 
+    unblock_vtAlarm();
     return SUCCESS;
 }
 
 int uthread_resume(int tid)
 {
+
+    //if thread doesn't exist, return failure
+    if (all_threads_.find(tid) == all_threads_.end())
+    {
+        std::cerr << LIBRARY_ERR << TID_NOT_EXIST;
+        return FAILURE;
+    }
+
+    //otherwise:
+
+    if (all_threads_[tid]->status_ == BLOCKED){
+        blocked_tids_.erase(tid);
+        ready_tids_.emplace_back(tid);
+    }
+
     return SUCCESS;
+
 }
 
 int uthread_sleep(int num_quantums)
@@ -369,17 +440,24 @@ int uthread_sleep(int num_quantums)
 
 int uthread_get_tid()
 {
-    return SUCCESS;
+    return running_tid_;
 }
 
 int uthread_get_total_quantums()
 {
-    return SUCCESS;
+    return num_of_total_quantums;
 }
 
 int uthread_get_quantums(int tid)
 {
-    return SUCCESS;
+    //if thread doesn't exist, return failure
+    if (all_threads_.find(tid) == all_threads_.end())
+      {
+        std::cerr << LIBRARY_ERR << TID_NOT_EXIST;
+        return FAILURE;
+      }
+
+    return all_threads_[tid] -> num_of_quantums_running;
 }
 
 #pragma clang diagnostic pop
