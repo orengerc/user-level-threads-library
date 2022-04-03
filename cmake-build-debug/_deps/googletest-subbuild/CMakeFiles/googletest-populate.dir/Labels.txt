@@ -1,0 +1,14 @@
+# Target labels
+ googletest-populate
+# Source files and their labels
+/cs/usr/oren_gerc/OS/os-2022-ex2/cmake-build-debug/_deps/googletest-subbuild/CMakeFiles/googletest-populate
+/cs/usr/oren_gerc/OS/os-2022-ex2/cmake-build-debug/_deps/googletest-subbuild/CMakeFiles/googletest-populate.rule
+/cs/usr/oren_gerc/OS/os-2022-ex2/cmake-build-debug/_deps/googletest-subbuild/CMakeFiles/googletest-populate-complete.rule
+/cs/usr/oren_gerc/OS/os-2022-ex2/cmake-build-debug/_deps/googletest-subbuild/googletest-populate-prefix/src/googletest-populate-stamp/googletest-populate-build.rule
+/cs/usr/oren_gerc/OS/os-2022-ex2/cmake-build-debug/_deps/googletest-subbuild/googletest-populate-prefix/src/googletest-populate-stamp/googletest-populate-configure.rule
+/cs/usr/oren_gerc/OS/os-2022-ex2/cmake-build-debug/_deps/googletest-subbuild/googletest-populate-prefix/src/googletest-populate-stamp/googletest-populate-download.rule
+/cs/usr/oren_gerc/OS/os-2022-ex2/cmake-build-debug/_deps/googletest-subbuild/googletest-populate-prefix/src/googletest-populate-stamp/googletest-populate-install.rule
+/cs/usr/oren_gerc/OS/os-2022-ex2/cmake-build-debug/_deps/googletest-subbuild/googletest-populate-prefix/src/googletest-populate-stamp/googletest-populate-mkdir.rule
+/cs/usr/oren_gerc/OS/os-2022-ex2/cmake-build-debug/_deps/googletest-subbuild/googletest-populate-prefix/src/googletest-populate-stamp/googletest-populate-patch.rule
+/cs/usr/oren_gerc/OS/os-2022-ex2/cmake-build-debug/_deps/googletest-subbuild/googletest-populate-prefix/src/googletest-populate-stamp/googletest-populate-test.rule
+/cs/usr/oren_gerc/OS/os-2022-ex2/cmake-build-debug/_deps/googletest-subbuild/googletest-populate-prefix/src/googletest-populate-stamp/googletest-populate-update.rule

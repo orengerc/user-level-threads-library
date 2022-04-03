@@ -81,7 +81,7 @@ TEST(InputCheck, uthread_spawn){
     }
 
     //create MAX threads, for each one check returns proper id
-    for (int i = 1; i <= MAX_THREAD_NUM; ++i)
+    for (int i = 1; i < MAX_THREAD_NUM; ++i)
     {
         EXPECT_EQ(uthread_spawn(Thread), i);  //return value is tid
     }
@@ -157,7 +157,7 @@ TEST(InputCheck, uthread_resume)
 
 void  wait_10_quantums(){
     int curr = uthread_get_total_quantums();
-    while (curr + 2 >= uthread_get_total_quantums())
+    while (curr + 10 >= uthread_get_total_quantums())
     {
         std::cout<< uthread_get_tid() << "\n";
     }

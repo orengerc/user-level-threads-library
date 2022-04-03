@@ -262,7 +262,6 @@ void insert_ready_to_running(){
         //erase first in ready
         ready_tids_.pop_front();
         all_threads_[running_tid_] -> status_ = RUNNING;
-
     }
 }
 
@@ -275,10 +274,8 @@ void switch_threads(status to){
 
     switch (to) {
         case READY:
-            if(true){
-                ready_tids_.emplace_back(running_tid_);
-                all_threads_[running_tid_] -> status_ = READY;
-            }
+            ready_tids_.emplace_back(running_tid_);
+            all_threads_[running_tid_] -> status_ = READY;
             break;
         case BLOCKED:
             blocked_tids_.insert(running_tid_);
@@ -297,8 +294,8 @@ void switch_threads(status to){
     //saveEnv
     if(!all_threads_[orig_tid]->saveEnvironment()){
         //jump to new thread
-        unblock_vtAlarm();
         jump:
+        unblock_vtAlarm();
         all_threads_[running_tid_]->startRunning();
     }
 }
@@ -513,18 +510,16 @@ int uthread_sleep(int num_quantums)
         return FAILURE;
     }
 
-    if (0 < num_quantums)
+    if (0 > num_quantums)
     {
         std::cerr << LIBRARY_ERR << INPUT_ERR;
         return FAILURE;
     }
-    ready_tids_.erase(std::find(ready_tids_.begin(), ready_tids_.end(), running_tid_));
     all_threads_[running_tid_] ->status_ = ASLEEP;
     sleepers_.emplace(running_tid_, num_quantums);
 
     //start timer again
     reset_timer();
-    unblock_vtAlarm();
     switch_threads(ASLEEP);
 
     return SUCCESS;
