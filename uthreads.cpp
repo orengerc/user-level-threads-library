@@ -87,7 +87,8 @@ enum status
     READY,
     RUNNING,
     BLOCKED,
-    ASLEEP
+    ASLEEP,
+    TERMINATED
 };
 
 class UThread
@@ -102,6 +103,7 @@ public:
     UThread() : tid_(0), env_{0}, status_(MAIN)
     {
       //Do we need to save the env for thread 0?
+        num_of_quantums_running ++;
         sigsetjmp(env_, 1);
         sigemptyset(&env_->__saved_mask);
     }
@@ -118,21 +120,27 @@ public:
     }
 
     void startRunning(){
-        num_of_quantums_running ++;
+        num_of_quantums_running++;
         siglongjmp(env_, 1);  //need to check return value??
     }
 
-    void saveEnv(){
-        sigsetjmp(env_, 1);
+    int saveEnvironment()
+    {
+        int success = sigsetjmp(env_, 1);
+        return success;
+    }
+
+    ~UThread(){
+//        free(env_->__jmpbuf);
     }
 };
 
 std::unordered_map<int, UThread *> all_threads_{};  //should allocate threads on the heap or stack???
-std::map<int, int> sleeps_{};
+std::map<int, int> sleepers_{};
 std::unordered_set<int> blocked_tids_{};            //unordered because we want fast access
 std::deque<int> ready_tids_{};
 std::set<int> free_ids_{};                          //set saves the items in increasing order
-int num_of_total_quantums;
+int total_quantums;
 int running_tid_{};
 int quantum_{};
 struct sigaction sa{};
@@ -226,7 +234,7 @@ void unblock_vtAlarm()
 
 void update_sleepers(){
     // does it work??
-    for (auto it = sleeps_.begin(), next_it = it; it != sleeps_.end(); it = next_it){
+    for (auto it = sleepers_.begin(), next_it = it; it != sleepers_.end(); it = next_it){
         ++next_it;
         it->second --;
         if (it -> second == -1){
@@ -236,60 +244,74 @@ void update_sleepers(){
             } else {
                 all_threads_[it->first] ->status_ = BLOCKED;
             }
-            sleeps_.erase(it);
+            sleepers_.erase(it);
         }
     }
 }
 
-void switch_ready_to_running()
-{
-    update_sleepers();
-
-    int orig_tid = running_tid_;
+void insert_ready_to_running(){
+    //move from ready to running.
     // what about empty ready qeueue??
     if (ready_tids_.empty()){
         running_tid_ = MAIN;
     }
+
     //move first in ready to running
     else{
         running_tid_ = ready_tids_.front();
         //erase first in ready
         ready_tids_.pop_front();
         all_threads_[running_tid_] -> status_ = RUNNING;
+
     }
-
-    num_of_total_quantums ++;
-
-    // save env
-    all_threads_[orig_tid]->saveEnv();
-
-    //jump to new running tid
-    unblock_vtAlarm();
-    all_threads_[running_tid_]->startRunning();
 }
 
-void time_switch()
-{
+void switch_threads(status to){
 
-    //add running thread to ready queue
-    ready_tids_.emplace_back(running_tid_);
-    all_threads_[running_tid_] -> status_ = READY;
+    //insert sleepers into ready queue
+    update_sleepers();
 
-    //save environment of current running thread, only if save succeeded, proceed to jump
-    if (sigsetjmp(all_threads_[running_tid_]->env_, 1))
-    {
-      cleanup();
-      std::cerr << SYSTEM_CALL_ERR << SIGS_ERROR;
-      exit(EXIT_FAILURE);
+    int orig_tid = running_tid_;
+
+    switch (to) {
+        case READY:
+            if(true){
+                ready_tids_.emplace_back(running_tid_);
+                all_threads_[running_tid_] -> status_ = READY;
+            }
+            break;
+        case BLOCKED:
+            blocked_tids_.insert(running_tid_);
+            all_threads_[running_tid_] -> status_ = BLOCKED;
+            break;
+        case TERMINATED:
+            insert_ready_to_running();
+            total_quantums ++;
+            goto jump;
     }
 
-    //switch first in ready to running
-    switch_ready_to_running();
+    //move first in ready to running
+    insert_ready_to_running();
+    total_quantums ++;
+
+    //saveEnv
+    if(!all_threads_[orig_tid]->saveEnvironment()){
+        //jump to new thread
+        unblock_vtAlarm();
+        jump:
+        all_threads_[running_tid_]->startRunning();
+    }
+}
+
+void timer_handler(){
+    block_vtAlarm();
+    switch_threads(READY);
+    unblock_vtAlarm();
 }
 
 void initialize_sigaction()
 {
-    sa.sa_handler = reinterpret_cast<__sighandler_t>(&time_switch);  //good cast??
+    sa.sa_handler = reinterpret_cast<__sighandler_t>(&timer_handler);  //good cast??
     if (sigaction(SIGVTALRM, &sa, nullptr) < 0)
     {
         std::cerr << SYSTEM_CALL_ERR << SIGS_ERROR;
@@ -311,10 +333,10 @@ int uthread_init(int quantum_usecs)
     initialize_main_thread();
 
     //start count
-    num_of_total_quantums = 1;
+    total_quantums = 1;
 
     //init free_ids set
-    for (int i = 1; i <= MAX_THREAD_NUM; ++i) free_ids_.insert(i);
+    for (int i = 1; i < MAX_THREAD_NUM; ++i) free_ids_.insert(i);
 
     quantum_ = quantum_usecs;
 
@@ -377,10 +399,14 @@ int uthread_terminate(int tid)
     //return tid to free_tids
     free_ids_.insert(tid);
 
-    //release memory of the terminated thread
-    delete all_threads_[tid];
+    //save status
+    auto status = all_threads_[tid]->status_;
 
-    switch (all_threads_[tid]->status_)
+    //erase terminated thread, and its release memory
+    delete all_threads_[tid];
+    all_threads_.erase(tid);
+
+    switch (status)
     {
         case MAIN:
             //irrelevant
@@ -390,7 +416,7 @@ int uthread_terminate(int tid)
             reset_timer();
             //switch tid to nex_tid
             unblock_vtAlarm();
-            switch_ready_to_running();
+            switch_threads(TERMINATED);
             break;
         case READY:
             ready_tids_.erase(std::find(ready_tids_.begin(), ready_tids_.end(), tid));
@@ -426,16 +452,14 @@ int uthread_block(int tid)
     switch (all_threads_[tid]->status_)
     {
         case RUNNING:
-            blocked_tids_.insert(tid);
-
             //start timer again
             reset_timer();
-            unblock_vtAlarm();
-            switch_ready_to_running();
+            switch_threads(BLOCKED);
             break;
         case READY:
             ready_tids_.erase(std::find(ready_tids_.begin(), ready_tids_.end(), tid));
             blocked_tids_.insert(tid);
+            all_threads_[tid]->status_ = BLOCKED;
             break;
         case BLOCKED:
             // Do nothing
@@ -451,6 +475,7 @@ int uthread_block(int tid)
 
 int uthread_resume(int tid)
 {
+    block_vtAlarm();
 
     //if thread doesn't exist, return failure
     if (all_threads_.find(tid) == all_threads_.end())
@@ -470,6 +495,8 @@ int uthread_resume(int tid)
     if (all_threads_[tid]->status_ == ASLEEP){
         blocked_tids_.erase(tid);
     }
+
+    unblock_vtAlarm();
 
     return SUCCESS;
 
@@ -493,12 +520,12 @@ int uthread_sleep(int num_quantums)
     }
     ready_tids_.erase(std::find(ready_tids_.begin(), ready_tids_.end(), running_tid_));
     all_threads_[running_tid_] ->status_ = ASLEEP;
-    sleeps_.emplace(running_tid_, num_quantums);
+    sleepers_.emplace(running_tid_, num_quantums);
 
     //start timer again
     reset_timer();
     unblock_vtAlarm();
-    switch_ready_to_running();
+    switch_threads(ASLEEP);
 
     return SUCCESS;
 }
@@ -512,7 +539,7 @@ int uthread_get_tid()
 
 int uthread_get_total_quantums()
 {
-    return num_of_total_quantums;
+    return total_quantums;
 }
 
 int uthread_get_quantums(int tid)

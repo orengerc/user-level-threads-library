@@ -14,6 +14,6 @@ set(gtest_force_shared_crt ON CACHE BOOL "" FORCE)
 FetchContent_MakeAvailable(googletest)
 
 # Now simply link against gtest or gtest_main as needed. Eg
-add_executable(os_2022_ex2 uthreads.cpp tests.cpp)
+add_executable(os_2022_ex2 uthreads.cpp tests.cpp tests_to_be_ran_separately.cpp)
 target_link_libraries(os_2022_ex2 gtest_main)
 #add_test(NAME example_test COMMAND example)
