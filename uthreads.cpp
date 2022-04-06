@@ -458,6 +458,8 @@ int uthread_block(int tid)
             blocked_tids_.insert(tid);
             all_threads_[tid]->status_ = BLOCKED;
             break;
+        case ASLEEP:
+            blocked_tids_.insert(tid);
         case BLOCKED:
             // Do nothing
             break;
@@ -487,6 +489,7 @@ int uthread_resume(int tid)
 
         blocked_tids_.erase(tid);
         ready_tids_.emplace_back(tid);
+        all_threads_[tid]->status_ = READY;
     }
 
     if (all_threads_[tid]->status_ == ASLEEP){
