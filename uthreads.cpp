@@ -210,7 +210,7 @@ void block_vtAlarm()
       std::cerr << SYSTEM_CALL_ERR << SIGS_ERROR;
       exit(EXIT_FAILURE);
   }
-  if (sigprocmask(SIG_SETMASK, &set, NULL) == FAILURE){
+  if (sigprocmask(SIG_BLOCK, &set, NULL) == FAILURE){
       std::cerr << SYSTEM_CALL_ERR << SIGS_ERROR;
       exit(EXIT_FAILURE);
   }
