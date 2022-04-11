@@ -74,6 +74,7 @@ address_t translate_address(address_t addr)
 #define BLOCK_THREAT_ZERO "Can not block thread 0\n"
 #define SLEEP_THREAD_ZERO "Can not sleep thread 0\n"
 #define SIGS_ERROR "Signal library fails\n"
+#define SPAWN_NULL "spawn can't get null entry point\n"
 
 
 
@@ -353,6 +354,11 @@ int uthread_spawn(thread_entry_point entry_point)
     if (free_ids_.empty())
     {
         std::cerr << LIBRARY_ERR << MAX_THREADS_ERR;
+        return FAILURE;
+    }
+    if (not entry_point)
+    {
+        std::cerr << LIBRARY_ERR << SPAWN_NULL;
         return FAILURE;
     }
 
